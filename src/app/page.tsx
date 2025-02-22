@@ -103,6 +103,10 @@ export default function Home() {
 
   const [isFrozen, setIsFrozen] = useState(false);
   const [isUnfreezing, setIsUnfreezing] = useState(false);
+  const [currentCheckingIndex, setCurrentCheckingIndex] = useState<
+    number | null
+  >(null);
+  const teamsToCheck = [...scores].reverse(); // เช็คจากล่างขึ้นบน
 
   useEffect(() => {
     if (isFrozen || isUnfreezing) return;
@@ -113,6 +117,72 @@ export default function Home() {
 
     return () => clearInterval(interval);
   }, [isFrozen, isUnfreezing]);
+
+  function handleNextCheck() {
+    if (
+      currentCheckingIndex === null ||
+      currentCheckingIndex >= teamsToCheck.length
+    ) {
+      setIsUnfreezing(false);
+      setCurrentCheckingIndex(null);
+      return;
+    }
+
+    const team = teamsToCheck[currentCheckingIndex];
+
+    // 🔵 ไฮไลต์ทีมที่กำลังเช็ค
+    setScores((prevScores) =>
+      prevScores.map((t) =>
+        t.team_name === team.team_name ? { ...t, isHighlighting: true } : t
+      )
+    );
+
+    setTimeout(() => {
+      // ✅ อัปเดตคะแนน + รีเรียงอันดับ
+      setScores((prevScores) => {
+        const updatedScores = prevScores.map((t) => {
+          if (t.team_name !== team.team_name) return t;
+
+          let newSum = 0;
+          const updatedTeam = { ...t };
+
+          for (let i = 1; i <= NUM_QUESTIONS; i++) {
+            const key = `questions${i}` as keyof ScoreProps;
+            const newScore = Math.max(
+              0,
+              t[key].score + Math.floor(Math.random() * 6 - 3)
+            );
+            const newStatus =
+              newScore > 7 ? "correct" : newScore > 3 ? "pending" : "incorrect";
+
+            updatedTeam[key] = {
+              ...t[key],
+              score: newScore,
+              status: newStatus,
+            };
+            newSum += newScore;
+          }
+
+          updatedTeam.sum = newSum;
+          return updatedTeam;
+        });
+
+        // 🔄 รีเรียงอันดับใหม่เฉพาะทีมที่ถูกเช็ค
+        return [...updatedScores].sort((a, b) => b.sum - a.sum);
+      });
+
+      // ✅ สีหายไปหลังจากกด `Next`
+      setTimeout(() => {
+        setScores((prevScores) =>
+          prevScores.map((t) =>
+            t.team_name === team.team_name ? { ...t, isHighlighting: false } : t
+          )
+        );
+
+        setCurrentCheckingIndex((prev) => (prev !== null ? prev + 1 : null));
+      }, 2000);
+    }, 1000);
+  }
 
   function updateScores() {
     setScores((prevScores) => {
@@ -171,88 +241,15 @@ export default function Home() {
     if (!isFrozen) return;
     setIsFrozen(false);
     setIsUnfreezing(true);
-
-    const teamsToUpdate = [...scores].reverse(); // เรียงจากล่างขึ้นบน
-    teamsToUpdate.forEach((team, index) => {
-      setTimeout(() => {
-        // 🔵 ไฮไลต์ทีมที่กำลังตรวจสอบเป็นสีน้ำเงิน
-        setScores((prevScores) =>
-          prevScores.map((t) =>
-            t.team_name === team.team_name ? { ...t, isHighlighting: true } : t
-          )
-        );
-
-        // ✅ หลังจากตรวจแล้ว อัปเดตคะแนน + รีเรียงอันดับ
-        setTimeout(() => {
-          setScores((prevScores) => {
-            const updatedScores = prevScores.map((t) => {
-              if (t.team_name !== team.team_name) return t;
-
-              let newSum = 0;
-              const updatedTeam = { ...t };
-
-              for (let i = 1; i <= NUM_QUESTIONS; i++) {
-                const key = `questions${i}` as keyof ScoreProps;
-                const newScore = Math.max(
-                  0,
-                  t[key].score + Math.floor(Math.random() * 6 - 3)
-                );
-                const newStatus =
-                  newScore > 7
-                    ? "correct"
-                    : newScore > 3
-                    ? "pending"
-                    : "incorrect";
-
-                updatedTeam[key] = {
-                  ...t[key],
-                  score: newScore,
-                  status: newStatus,
-                };
-                newSum += newScore;
-              }
-
-              updatedTeam.sum = newSum;
-              return updatedTeam;
-            });
-
-            // 🔄 รีเรียงอันดับใหม่เฉพาะทีมที่ถูกตรวจ
-            const sortedScores = [...updatedScores].sort(
-              (a, b) => b.sum - a.sum
-            );
-            sortedScores.forEach((t, i) => {
-              t.previousRank =
-                prevScores.find((p) => p.team_name === t.team_name)
-                  ?.previousRank || i + 1;
-              t.isMoving = true;
-            });
-
-            return sortedScores;
-          });
-
-          // ✅ หลังจากตรวจครบทุกทีม สีแดง/เขียวจะกลับมา
-          setTimeout(() => {
-            setScores((prevScores) =>
-              prevScores.map((t) =>
-                t.team_name === team.team_name
-                  ? { ...t, isMoving: false, isHighlighting: false }
-                  : t
-              )
-            );
-
-            if (index === teamsToUpdate.length - 1) {
-              setTimeout(() => {
-                setIsUnfreezing(false);
-              }, 500);
-            }
-          }, 1000);
-        }, 1000); // อัปเดตคะแนนหลังจาก 1 วินาที
-      }, index * 2000); // ค่อยๆ อัปเดตทีละทีม (2 วินาทีต่อทีม)
-    });
+    setCurrentCheckingIndex(0); // เริ่มเช็คทีมแรก
   }
 
   return (
-    <div className="flex flex-col items-center w-full h-screen gap-5 p-4 overflow-x-auto">
+    <div
+      className={`flex flex-col items-center w-full h-screen gap-5 p-4 overflow-x-auto ${
+        isFrozen ? "bg-blue-950" : ""
+      }`}
+    >
       <h1 className="text-4xl font-bold mb-5">🏆 Scoreboard Ranking 🏆</h1>
 
       <div className="flex gap-4 mb-5">
@@ -269,6 +266,16 @@ export default function Home() {
         >
           Unfreeze Score ▶️
         </button>
+        {isUnfreezing &&
+          currentCheckingIndex !== null &&
+          currentCheckingIndex < teamsToCheck.length && (
+            <button
+              className="px-4 py-2 bg-green-500 text-white rounded"
+              onClick={handleNextCheck}
+            >
+              Next ✅
+            </button>
+          )}
       </div>
 
       <div className="grid grid-cols-[auto,2fr,repeat(8,1fr),1fr] w-full min-w-[1024px] text-white text-lg bg-gray-700 p-4 rounded-lg font-bold">
