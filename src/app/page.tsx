@@ -107,6 +107,13 @@ export default function Home() {
     number | null
   >(null);
   const teamsToCheck = [...scores].reverse(); // เช็คจากล่างขึ้นบน
+  const [modalState, setModalState] = useState<{
+    isOpen: boolean;
+    message: string;
+  }>({
+    isOpen: false,
+    message: "",
+  });
 
   useEffect(() => {
     if (isFrozen || isUnfreezing) return;
@@ -130,6 +137,28 @@ export default function Home() {
 
     const team = teamsToCheck[currentCheckingIndex];
 
+    // 🔥 ตรวจสอบว่าทีมมี `isFirstSolve` อย่างน้อย 1 ข้อไหม
+    const firstSolveQuestions = Object.entries(team)
+      .filter(
+        ([key, value]) =>
+          key.startsWith("questions") && (value as QuestionProps).isFirstSolve
+      )
+      .map(([key]) => key.replace("questions", "Q"));
+
+    if (firstSolveQuestions.length > 0) {
+      setModalState({
+        isOpen: true,
+        message: `ทีม "${
+          team.team_name
+        }" ทำ First Solve ได้ในข้อ: ${firstSolveQuestions.join(", ")}`,
+      });
+      return;
+    }
+
+    processNextTeam(team);
+  }
+
+  function processNextTeam(team: ScoreProps) {
     // 🔵 ไฮไลต์ทีมที่กำลังเช็ค
     setScores((prevScores) =>
       prevScores.map((t) =>
@@ -167,7 +196,6 @@ export default function Home() {
           return updatedTeam;
         });
 
-        // 🔄 รีเรียงอันดับใหม่เฉพาะทีมที่ถูกเช็ค
         return [...updatedScores].sort((a, b) => b.sum - a.sum);
       });
 
@@ -180,7 +208,7 @@ export default function Home() {
         );
 
         setCurrentCheckingIndex((prev) => (prev !== null ? prev + 1 : null));
-      }, 2000);
+      }, 500);
     }, 1000);
   }
 
@@ -356,6 +384,25 @@ export default function Home() {
               </motion.div>
             );
           })}
+          {modalState.isOpen && (
+            <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+              <div className="w-full h-full bg-black p-6 flex flex-col items-center justify-center rounded-lg shadow-2xl">
+                <h2 className="text-9xl font-bold mb-4">
+                  🎉 First Solve Alert!
+                </h2>
+                <p className="mb-4 text-4xl">{modalState.message}</p>
+                <button
+                  className="px-4 py-2 bg-blue-500 text-white rounded"
+                  onClick={() => {
+                    setModalState({ isOpen: false, message: "" });
+                    processNextTeam(teamsToCheck[currentCheckingIndex!]);
+                  }}
+                >
+                  OK ✅
+                </button>
+              </div>
+            </div>
+          )}
         </AnimatePresence>
       </div>
     </div>
