@@ -245,8 +245,14 @@ export default function Home() {
             0,
             team[key].score + Math.floor(Math.random() * 6 - 3)
           );
+          const statuses: QuestionProps["status"][] = [
+            "correct",
+            "pending",
+            "incorrect",
+            undefined,
+          ];
           const newStatus =
-            newScore > 7 ? "correct" : newScore > 3 ? "pending" : "incorrect";
+            statuses[Math.floor(Math.random() * statuses.length)];
 
           updatedTeam[key] = {
             ...team[key],
