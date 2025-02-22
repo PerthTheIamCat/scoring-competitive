@@ -176,7 +176,15 @@ export default function Home() {
           const updatedTeam = { ...t };
 
           for (let i = 1; i <= NUM_QUESTIONS; i++) {
-            const key = `questions${i}` as keyof ScoreProps;
+            const key = `questions${i}` as
+              | "questions1"
+              | "questions2"
+              | "questions3"
+              | "questions4"
+              | "questions5"
+              | "questions6"
+              | "questions7"
+              | "questions8";
             const newScore = Math.max(
               0,
               t[key].score + Math.floor(Math.random() * 6 - 3)
@@ -224,7 +232,15 @@ export default function Home() {
         const updatedTeam = { ...team };
 
         for (let i = 1; i <= NUM_QUESTIONS; i++) {
-          const key = `questions${i}` as keyof ScoreProps;
+          const key = `questions${i}` as
+            | "questions1"
+            | "questions2"
+            | "questions3"
+            | "questions4"
+            | "questions5"
+            | "questions6"
+            | "questions7"
+            | "questions8";
           const newScore = Math.max(
             0,
             team[key].score + Math.floor(Math.random() * 6 - 3)
