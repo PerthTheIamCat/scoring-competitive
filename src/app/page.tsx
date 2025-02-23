@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { io, Socket } from "socket.io-client";
 
+let socket: Socket;
 type QuestionProps = {
   score: number;
   isFirstSolve: boolean;
-  status?: "correct" | "pending" | "incorrect";
+  status?: "correct" | "pending" | "incorrect" | "none";
 };
 
 type ScoreProps = {
@@ -28,85 +30,28 @@ type ScoreProps = {
 const NUM_QUESTIONS = 8;
 
 export default function Home() {
-  const [scores, setScores] = useState<ScoreProps[]>([
-    {
-      team_name: "Team A สูดไก่ใส่ไข่",
-      questions1: { score: 5, isFirstSolve: true, status: "correct" },
-      questions2: { score: 3, isFirstSolve: false },
-      questions3: { score: 4, isFirstSolve: false, status: "incorrect" },
-      questions4: { score: 6, isFirstSolve: false, status: "correct" },
-      questions5: { score: 7, isFirstSolve: false, status: "pending" },
-      questions6: { score: 8, isFirstSolve: false },
-      questions7: { score: 9, isFirstSolve: false, status: "correct" },
-      questions8: { score: 10, isFirstSolve: false },
-      sum: 52,
-      previousRank: 1,
-      isMoving: false,
-    },
-    {
-      team_name: "Team B เพิร์ธแอมป์ สลายบัก",
-      questions1: { score: 4, isFirstSolve: false, status: "pending" },
-      questions2: { score: 6, isFirstSolve: true, status: "correct" },
-      questions3: { score: 5, isFirstSolve: true },
-      questions4: { score: 7, isFirstSolve: true, status: "pending" },
-      questions5: { score: 8, isFirstSolve: true, status: "correct" },
-      questions6: { score: 5, isFirstSolve: true, status: "incorrect" },
-      questions7: { score: 7, isFirstSolve: true },
-      questions8: { score: 6, isFirstSolve: true },
-      sum: 48,
-      previousRank: 2,
-      isMoving: false,
-    },
-    {
-      team_name: "Team C โปรแกรมเมอร์เอง",
-      questions1: { score: 3, isFirstSolve: false, status: "incorrect" },
-      questions2: { score: 5, isFirstSolve: false, status: "correct" },
-      questions3: { score: 6, isFirstSolve: false, status: "pending" },
-      questions4: { score: 4, isFirstSolve: false, status: "incorrect" },
-      questions5: { score: 6, isFirstSolve: false, status: "correct" },
-      questions6: { score: 7, isFirstSolve: false, status: "pending" },
-      questions7: { score: 8, isFirstSolve: false, status: "correct" },
-      questions8: { score: 9, isFirstSolve: false, status: "pending" },
-      sum: 48,
-      previousRank: 3,
-      isMoving: false,
-    },
-    {
-      team_name: "Team D สามีสวย ภรรยาเท่",
-      questions1: { score: 6, isFirstSolve: false, status: "correct" },
-      questions2: { score: 4, isFirstSolve: false, status: "incorrect" },
-      questions3: { score: 7, isFirstSolve: false, status: "correct" },
-      questions4: { score: 5, isFirstSolve: false, status: "pending" },
-      questions5: { score: 6, isFirstSolve: false, status: "correct" },
-      questions6: { score: 8, isFirstSolve: false, status: "pending" },
-      questions7: { score: 9, isFirstSolve: false, status: "correct" },
-      questions8: { score: 10, isFirstSolve: false, status: "pending" },
-      sum: 55,
-      previousRank: 4,
-      isMoving: false,
-    },
-    {
-      team_name: "Team E ไอทีหมี ฟังเพลงเพราะ",
-      questions1: { score: 7, isFirstSolve: false, status: "correct" },
-      questions2: { score: 6, isFirstSolve: false, status: "pending" },
-      questions3: { score: 5, isFirstSolve: false, status: "incorrect" },
-      questions4: { score: 4, isFirstSolve: false, status: "incorrect" },
-      questions5: { score: 3, isFirstSolve: false, status: "incorrect" },
-      questions6: { score: 2, isFirstSolve: false, status: "incorrect" },
-      questions7: { score: 1, isFirstSolve: false, status: "incorrect" },
-      questions8: { score: 0, isFirstSolve: false, status: "incorrect" },
-      sum: 28,
-      previousRank: 5,
-      isMoving: false,
-    },
-  ]);
+  const [scores, setScores] = useState<ScoreProps[]>([]);
+
+  useEffect(() => {
+    fetch("/api/socket");
+    socket = io({ path: "/api/socket" });
+
+    socket.on("score-updated", (updatedData) => {
+      console.log("Received score update:", updatedData);
+      handleScoreUpdate(updatedData.teams);
+    });
+
+    return () => {
+      socket.off("score-updated");
+    };
+  }, []);
 
   const [isFrozen, setIsFrozen] = useState(false);
   const [isUnfreezing, setIsUnfreezing] = useState(false);
   const [currentCheckingIndex, setCurrentCheckingIndex] = useState<
     number | null
   >(null);
-  const teamsToCheck = [...scores].reverse(); // เช็คจากล่างขึ้นบน
+  const teamsToCheck = [...scores].reverse();
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
     message: string;
@@ -115,15 +60,30 @@ export default function Home() {
     message: "",
   });
 
-  useEffect(() => {
-    if (isFrozen || isUnfreezing) return;
+  function handleScoreUpdate(updatedTeams: ScoreProps[]) {
+    setScores((prevScores) => {
+      const oldRanks = prevScores.reduce(
+        (acc, team, index) => ({ ...acc, [team.team_name]: index + 1 }),
+        {} as Record<string, number>
+      );
 
-    const interval = setInterval(() => {
-      updateScores();
-    }, 3000);
+      const sortedScores = [...updatedTeams].sort((a, b) => b.sum - a.sum);
+      sortedScores.forEach((team, index) => {
+        const oldRank = oldRanks[team.team_name] || index + 1;
+        const newRank = index + 1;
+        team.previousRank = oldRank;
+        team.isMoving = oldRank !== newRank;
+      });
 
-    return () => clearInterval(interval);
-  }, [isFrozen, isUnfreezing]);
+      setTimeout(() => {
+        setScores((prev) =>
+          prev.map((team) => ({ ...team, isMoving: false }))
+        );
+      }, 1000);
+
+      return sortedScores;
+    });
+  }
 
   function handleNextCheck() {
     if (
@@ -137,7 +97,6 @@ export default function Home() {
 
     const team = teamsToCheck[currentCheckingIndex];
 
-    // 🔥 ตรวจสอบว่าทีมมี `isFirstSolve` อย่างน้อย 1 ข้อไหม
     const firstSolveQuestions = Object.entries(team)
       .filter(
         ([key, value]) =>
@@ -148,9 +107,7 @@ export default function Home() {
     if (firstSolveQuestions.length > 0) {
       setModalState({
         isOpen: true,
-        message: `ทีม "${
-          team.team_name
-        }" ทำ First Solve ได้ในข้อ: ${firstSolveQuestions.join(", ")}`,
+        message: `ทีม "${team.team_name}" ทำ First Solve ได้ในข้อ: ${firstSolveQuestions.join(", ")}`,
       });
       return;
     }
@@ -159,7 +116,6 @@ export default function Home() {
   }
 
   function processNextTeam(team: ScoreProps) {
-    // 🔵 ไฮไลต์ทีมที่กำลังเช็ค
     setScores((prevScores) =>
       prevScores.map((t) =>
         t.team_name === team.team_name ? { ...t, isHighlighting: true } : t
@@ -167,120 +123,13 @@ export default function Home() {
     );
 
     setTimeout(() => {
-      // ✅ อัปเดตคะแนน + รีเรียงอันดับ
-      setScores((prevScores) => {
-        const updatedScores = prevScores.map((t) => {
-          if (t.team_name !== team.team_name) return t;
-
-          let newSum = 0;
-          const updatedTeam = { ...t };
-
-          for (let i = 1; i <= NUM_QUESTIONS; i++) {
-            const key = `questions${i}` as
-              | "questions1"
-              | "questions2"
-              | "questions3"
-              | "questions4"
-              | "questions5"
-              | "questions6"
-              | "questions7"
-              | "questions8";
-            const newScore = Math.max(
-              0,
-              t[key].score + Math.floor(Math.random() * 6 - 3)
-            );
-            const newStatus =
-              newScore > 7 ? "correct" : newScore > 3 ? "pending" : "incorrect";
-
-            updatedTeam[key] = {
-              ...t[key],
-              score: newScore,
-              status: newStatus,
-            };
-            newSum += newScore;
-          }
-
-          updatedTeam.sum = newSum;
-          return updatedTeam;
-        });
-
-        return [...updatedScores].sort((a, b) => b.sum - a.sum);
-      });
-
-      // ✅ สีหายไปหลังจากกด `Next`
-      setTimeout(() => {
-        setScores((prevScores) =>
-          prevScores.map((t) =>
-            t.team_name === team.team_name ? { ...t, isHighlighting: false } : t
-          )
-        );
-
-        setCurrentCheckingIndex((prev) => (prev !== null ? prev + 1 : null));
-      }, 500);
-    }, 1000);
-  }
-
-  function updateScores() {
-    setScores((prevScores) => {
-      const oldRanks = prevScores.reduce(
-        (acc, team, index) => ({ ...acc, [team.team_name]: index + 1 }),
-        {} as Record<string, number>
+      setScores((prevScores) =>
+        prevScores.map((t) =>
+          t.team_name === team.team_name ? { ...t, isHighlighting: false } : t
+        )
       );
-
-      const updatedScores = prevScores.map((team) => {
-        let newSum = 0;
-        const updatedTeam = { ...team };
-
-        for (let i = 1; i <= NUM_QUESTIONS; i++) {
-          const key = `questions${i}` as
-            | "questions1"
-            | "questions2"
-            | "questions3"
-            | "questions4"
-            | "questions5"
-            | "questions6"
-            | "questions7"
-            | "questions8";
-          const newScore = Math.max(
-            0,
-            team[key].score + Math.floor(Math.random() * 6 - 3)
-          );
-          const statuses: QuestionProps["status"][] = [
-            "correct",
-            "pending",
-            "incorrect",
-            undefined,
-          ];
-          const newStatus =
-            statuses[Math.floor(Math.random() * statuses.length)];
-
-          updatedTeam[key] = {
-            ...team[key],
-            score: newScore,
-            status: newStatus,
-          };
-          newSum += newScore;
-        }
-
-        updatedTeam.sum = newSum;
-        return updatedTeam;
-      });
-
-      const sortedScores = [...updatedScores].sort((a, b) => b.sum - a.sum);
-      sortedScores.forEach((team, index) => {
-        const oldRank = oldRanks[team.team_name] || index + 1;
-        const newRank = index + 1;
-        team.previousRank = oldRank;
-        team.isMoving = oldRank !== newRank;
-      });
-
-      // ให้สีกลับเป็นปกติหลังจาก 1 วินาที
-      setTimeout(() => {
-        setScores((prev) => prev.map((team) => ({ ...team, isMoving: false })));
-      }, 1000);
-
-      return sortedScores;
-    });
+      setCurrentCheckingIndex((prev) => (prev !== null ? prev + 1 : null));
+    }, 1000);
   }
 
   function handleFreeze() {
@@ -291,7 +140,7 @@ export default function Home() {
     if (!isFrozen) return;
     setIsFrozen(false);
     setIsUnfreezing(true);
-    setCurrentCheckingIndex(0); // เริ่มเช็คทีมแรก
+    setCurrentCheckingIndex(0);
   }
 
   return (
@@ -344,13 +193,13 @@ export default function Home() {
           {scores.map((item, index) => {
             const bgColor = isUnfreezing
               ? item.isHighlighting
-                ? "bg-blue-500" // 🔵 กำลังตรวจสอบ
-                : "bg-gray-500" // ⚪ ไม่มีสีแดง/เขียวระหว่าง `Unfreeze`
+                ? "bg-blue-500"
+                : "bg-gray-500"
               : item.isMoving
               ? item.previousRank! - (index + 1) > 0
-                ? "bg-green-500" // 🟢 อันดับขึ้น (กลับมาใช้หลัง Unfreeze)
-                : "bg-red-500" // 🔴 อันดับลง (กลับมาใช้หลัง Unfreeze)
-              : "bg-gray-500"; // ⚪ ปกติ
+                ? "bg-green-500"
+                : "bg-red-500"
+              : "bg-gray-500";
 
             return (
               <motion.div
@@ -362,17 +211,14 @@ export default function Home() {
                   damping: 25,
                   duration: 3,
                 }}
-                className={`grid grid-cols-[auto,2fr,repeat(8,1fr),1fr] w-full h-16 text-white text-lg rounded-lg 
-  items-center p-4 shadow-md transition-colors duration-500 ${bgColor}`}
+                className={`grid grid-cols-[auto,2fr,repeat(8,1fr),1fr] w-full h-16 text-white text-lg rounded-lg items-center p-4 shadow-md transition-colors duration-500 ${bgColor}`}
               >
                 <p className="text-center font-bold pr-5">{index + 1}</p>
                 <p>{item.team_name}</p>
-                {/* 🔥 เพิ่มส่วนแสดงคะแนนแต่ละข้อ */}
                 {Array.from({ length: NUM_QUESTIONS }, (_, i) => {
                   const key = `questions${i + 1}` as keyof ScoreProps;
                   const question = item[key] as QuestionProps;
 
-                  // ถ้า isFirstSolve เป็น true ให้แสดง 🔥 แทนที่วงกลม
                   if (question.isFirstSolve) {
                     return (
                       <div
@@ -384,7 +230,6 @@ export default function Home() {
                     );
                   }
 
-                  // ถ้ามี status ให้แสดงสี ถ้าไม่มีให้โปร่งใส
                   const statusColor =
                     question.status === "correct"
                       ? "bg-green-500"
@@ -392,7 +237,7 @@ export default function Home() {
                       ? "bg-yellow-500"
                       : question.status === "incorrect"
                       ? "bg-red-500"
-                      : "bg-transparent"; // ไม่มีสีถ้า status เป็น undefined
+                      : "bg-transparent";
 
                   return (
                     <div
@@ -401,8 +246,7 @@ export default function Home() {
                     ></div>
                   );
                 })}
-                <p className="text-center font-bold">{item.sum}</p>{" "}
-                {/* ✅ ยังแสดงคะแนนรวมเหมือนเดิม */}
+                <p className="text-center font-bold">{item.sum}</p>
               </motion.div>
             );
           })}
