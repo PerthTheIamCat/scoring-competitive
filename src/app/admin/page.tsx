@@ -16,7 +16,7 @@ type Team = {
   sum: number;
   previousRank: number;
   isMoving: boolean;
-  [key: string]: any;
+  [key: string]: string | number | boolean | Question;
 };
 
 export default function Admin() {
@@ -24,7 +24,9 @@ export default function Admin() {
   const [teamName, setTeamName] = useState<string>("");
   const [numProblems, setNumProblems] = useState<number>(0);
   const [showModal, setShowModal] = useState<boolean>(false);
-  const [selectedTeamIndex, setSelectedTeamIndex] = useState<number | null>(null);
+  const [selectedTeamIndex, setSelectedTeamIndex] = useState<number | null>(
+    null
+  );
   const [selectedQuestionKey, setSelectedQuestionKey] = useState<string>("");
   const [editScore, setEditScore] = useState<number>(0);
   const [editStatus, setEditStatus] = useState<string>("none");
@@ -66,7 +68,11 @@ export default function Admin() {
     socket.emit("update-score", { teams: updatedTeams });
   };
 
-  const openEditModal = (teamIndex: number, questionKey: string, question: Question) => {
+  const openEditModal = (
+    teamIndex: number,
+    questionKey: string,
+    question: Question
+  ) => {
     setSelectedTeamIndex(teamIndex);
     setSelectedQuestionKey(questionKey);
     setEditScore(question.score);
@@ -81,15 +87,21 @@ export default function Admin() {
     const updatedTeams = [...teams];
     const team = updatedTeams[selectedTeamIndex];
     team[selectedQuestionKey] = {
-      ...team[selectedQuestionKey],
+      ...(team[selectedQuestionKey] as Question),
       score: editScore,
       status: editStatus,
       isFirstSolve: editIsFirstSolve,
     };
 
     team.sum = Object.entries(team)
-      .filter(([key]) => key.startsWith("questions"))
-      .reduce((acc, [, val]: [string, any]) => acc + val.score, 0);
+      .filter(
+        ([key, val]) =>
+          key.startsWith("questions") &&
+          typeof val === "object" &&
+          val !== null &&
+          "score" in val
+      )
+      .reduce((acc, [, val]) => acc + (val as Question).score, 0);
 
     setTeams(updatedTeams);
     setShowModal(false);
@@ -143,25 +155,36 @@ export default function Admin() {
               </h3>
               <div className="list-disc flex gap-2">
                 {Object.entries(team)
-                  .filter(([key]) => key.startsWith("questions"))
-                  .map(([key, value]: [string, any]) => (
-                    <div
-                      key={key}
-                      className={`bg-gray-100 py-2 px-4 rounded-xl cursor-pointer ${
-                        value.score === 0
-                          ? "bg-red-200"
-                          : value.score > 0 && value.score < 100
-                          ? "bg-yellow-200"
-                          : "bg-green-200"
-                      }`}
-                      onClick={() => openEditModal(index, key, value)}
-                    >
-                      <p className="font-bold">Q{key.slice(-1)}:</p>
-                      <p>Score: {value.score}</p>
-                      <p>Status: {value.status}</p>
-                      <p>First Solve: {value.isFirstSolve ? "Yes" : "No"}</p>
-                    </div>
-                  ))}
+                  .filter(
+                    ([key, value]) =>
+                      key.startsWith("questions") &&
+                      typeof value === "object" &&
+                      value !== null &&
+                      "score" in value
+                  )
+                  .map(([key, value]) => {
+                    const question = value as Question;
+                    return (
+                      <div
+                        key={key}
+                        className={`bg-gray-100 py-2 px-4 rounded-xl cursor-pointer ${
+                          question.score === 0
+                            ? "bg-red-200"
+                            : question.score > 0 && question.score < 100
+                            ? "bg-yellow-200"
+                            : "bg-green-200"
+                        }`}
+                        onClick={() => openEditModal(index, key, question)}
+                      >
+                        <p className="font-bold">Q{key.slice(-1)}:</p>
+                        <p>Score: {question.score}</p>
+                        <p>Status: {question.status}</p>
+                        <p>
+                          First Solve: {question.isFirstSolve ? "Yes" : "No"}
+                        </p>
+                      </div>
+                    );
+                  })}
               </div>
               <div>Sum: {team.sum}</div>
             </div>
@@ -177,6 +200,8 @@ export default function Admin() {
               <label className="block mb-2">Score:</label>
               <input
                 type="number"
+                title="Score"
+                placeholder="Enter Score"
                 className="w-full border rounded-md px-3 py-2"
                 value={editScore}
                 onChange={(e) => setEditScore(Number(e.target.value))}
@@ -186,6 +211,7 @@ export default function Admin() {
               <label className="block mb-2">Status:</label>
               <select
                 className="w-full border rounded-md px-3 py-2"
+                title="Select Status"
                 value={editStatus}
                 onChange={(e) => setEditStatus(e.target.value)}
               >
@@ -196,9 +222,13 @@ export default function Admin() {
               </select>
             </div>
             <div className="mb-4">
-              <label className="block mb-2">First Solve:</label>
+              <label htmlFor="editIsFirstSolve" className="block mb-2">
+                First Solve:
+              </label>
               <input
+                id="editIsFirstSolve"
                 type="checkbox"
+                title="First Solve"
                 checked={editIsFirstSolve}
                 onChange={(e) => setEditIsFirstSolve(e.target.checked)}
               />
