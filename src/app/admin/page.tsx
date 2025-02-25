@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { io, Socket } from "socket.io-client";
 
 let socket: Socket;
@@ -13,10 +13,11 @@ type Question = {
 
 type Team = {
   team_name: string;
+  questions: Question[]; // now an array of questions
   sum: number;
   previousRank: number;
   isMoving: boolean;
-  [key: string]: string | number | boolean | Question;
+  // (Optional: you can add other properties if needed)
 };
 
 export default function Admin() {
@@ -27,7 +28,9 @@ export default function Admin() {
   const [selectedTeamIndex, setSelectedTeamIndex] = useState<number | null>(
     null
   );
-  const [selectedQuestionKey, setSelectedQuestionKey] = useState<string>("");
+  const [selectedQuestionIndex, setSelectedQuestionIndex] = useState<
+    number | null
+  >(null);
   const [editScore, setEditScore] = useState<number>(0);
   const [editStatus, setEditStatus] = useState<string>("none");
   const [editIsFirstSolve, setEditIsFirstSolve] = useState<boolean>(false);
@@ -44,25 +47,27 @@ export default function Admin() {
       return;
     }
 
+    // Create an array of questions with length equal to numProblems
+    const questions = Array(numProblems)
+      .fill(null)
+      .map(() => ({
+        score: 0,
+        isFirstSolve: false,
+        status: "none",
+      }));
+
     const newTeam: Team = {
       team_name: teamName,
+      questions,
       sum: 0,
       previousRank: 0,
       isMoving: false,
     };
 
-    for (let i = 1; i <= numProblems; i++) {
-      newTeam[`questions${i}`] = {
-        score: 0,
-        isFirstSolve: false,
-        status: "none",
-      };
-    }
-
     const updatedTeams = [...teams, newTeam];
     setTeams(updatedTeams);
     setTeamName("");
-    setNumProblems(0);
+    // setNumProblems(0);
 
     initializeSocket();
     socket.emit("update-score", { teams: updatedTeams });
@@ -70,11 +75,11 @@ export default function Admin() {
 
   const openEditModal = (
     teamIndex: number,
-    questionKey: string,
+    questionIndex: number,
     question: Question
   ) => {
     setSelectedTeamIndex(teamIndex);
-    setSelectedQuestionKey(questionKey);
+    setSelectedQuestionIndex(questionIndex);
     setEditScore(question.score);
     setEditStatus(question.status);
     setEditIsFirstSolve(question.isFirstSolve);
@@ -82,26 +87,20 @@ export default function Admin() {
   };
 
   const handleUpdateQuestion = () => {
-    if (selectedTeamIndex === null || !selectedQuestionKey) return;
+    if (selectedTeamIndex === null || selectedQuestionIndex === null) return;
 
     const updatedTeams = [...teams];
     const team = updatedTeams[selectedTeamIndex];
-    team[selectedQuestionKey] = {
-      ...(team[selectedQuestionKey] as Question),
+    // Update the specific question
+    team.questions[selectedQuestionIndex] = {
+      ...team.questions[selectedQuestionIndex],
       score: editScore,
       status: editStatus,
       isFirstSolve: editIsFirstSolve,
     };
 
-    team.sum = Object.entries(team)
-      .filter(
-        ([key, val]) =>
-          key.startsWith("questions") &&
-          typeof val === "object" &&
-          val !== null &&
-          "score" in val
-      )
-      .reduce((acc, [, val]) => acc + (val as Question).score, 0);
+    // Recalculate the team sum
+    team.sum = team.questions.reduce((acc, q) => acc + q.score, 0);
 
     setTeams(updatedTeams);
     setShowModal(false);
@@ -145,46 +144,35 @@ export default function Admin() {
           </div>
         </div>
         <div className="row-span-9 overflow-y-auto p-4">
-          {teams.map((team, index) => (
+          {teams.map((team, teamIndex) => (
             <div
-              key={index}
+              key={teamIndex}
               className="bg-white rounded-lg shadow-md py-4 mb-4 flex flex-row justify-around items-center"
             >
               <h3 className="text-2xl font-bold mb-2">
-                #{index + 1} {team.team_name}
+                #{teamIndex + 1} {team.team_name}
               </h3>
-              <div className="list-disc flex gap-2">
-                {Object.entries(team)
-                  .filter(
-                    ([key, value]) =>
-                      key.startsWith("questions") &&
-                      typeof value === "object" &&
-                      value !== null &&
-                      "score" in value
-                  )
-                  .map(([key, value]) => {
-                    const question = value as Question;
-                    return (
-                      <div
-                        key={key}
-                        className={`bg-gray-100 py-2 px-4 rounded-xl cursor-pointer ${
-                          question.score === 0
-                            ? "bg-red-200"
-                            : question.score > 0 && question.score < 100
-                            ? "bg-yellow-200"
-                            : "bg-green-200"
-                        }`}
-                        onClick={() => openEditModal(index, key, question)}
-                      >
-                        <p className="font-bold">Q{key.slice(-1)}:</p>
-                        <p>Score: {question.score}</p>
-                        <p>Status: {question.status}</p>
-                        <p>
-                          First Solve: {question.isFirstSolve ? "Yes" : "No"}
-                        </p>
-                      </div>
-                    );
-                  })}
+              <div className="flex gap-2">
+                {team.questions.map((question, questionIndex) => (
+                  <div
+                    key={questionIndex}
+                    className={`py-2 px-4 rounded-xl cursor-pointer ${
+                      question.score === 0
+                        ? "bg-red-200"
+                        : question.score > 0 && question.score < 100
+                        ? "bg-yellow-200"
+                        : "bg-green-200"
+                    }`}
+                    onClick={() =>
+                      openEditModal(teamIndex, questionIndex, question)
+                    }
+                  >
+                    <p className="font-bold">Q{questionIndex + 1}:</p>
+                    <p>Score: {question.score}</p>
+                    <p>Status: {question.status}</p>
+                    <p>First Solve: {question.isFirstSolve ? "Yes" : "No"}</p>
+                  </div>
+                ))}
               </div>
               <div>Sum: {team.sum}</div>
             </div>
@@ -198,20 +186,49 @@ export default function Admin() {
             <h2 className="text-2xl font-bold mb-4">Edit Question</h2>
             <div className="mb-4">
               <label className="block mb-2">Score:</label>
-              <input
-                type="number"
-                title="Score"
-                placeholder="Enter Score"
-                className="w-full border rounded-md px-3 py-2"
-                value={editScore}
-                onChange={(e) => setEditScore(Number(e.target.value))}
-              />
+              {/* Stepper UI for numeric input */}
+              <div className="flex items-center gap-2">
+                <button
+                  className="bg-gray-300 px-2 py-1 rounded"
+                  onClick={() => setEditScore((prev) => Math.max(prev - 1, 0))}
+                >
+                  -
+                </button>
+                <input
+                  type="text"
+                  title="Score"
+                  placeholder="Score"
+                  className="w-16 border rounded-md text-center"
+                  value={editScore}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (/^\d*$/.test(val)) {
+                      const num = Number(val);
+                      setEditScore(num);
+                      if (num === 100) {
+                        setEditStatus("correct");
+                      } else if (num === 0) {
+                        setEditStatus("incorrect");
+                      } else {
+                        setEditStatus("pending");
+                      }
+                    }
+                  }}
+                />
+                <button
+                  className="bg-gray-300 px-2 py-1 rounded"
+                  onClick={() => setEditScore((prev) => prev + 1)}
+                >
+                  +
+                </button>
+              </div>
             </div>
             <div className="mb-4">
               <label className="block mb-2">Status:</label>
               <select
+                title="Status"
+                aria-label="Question Status"
                 className="w-full border rounded-md px-3 py-2"
-                title="Select Status"
                 value={editStatus}
                 onChange={(e) => setEditStatus(e.target.value)}
               >
@@ -228,7 +245,6 @@ export default function Admin() {
               <input
                 id="editIsFirstSolve"
                 type="checkbox"
-                title="First Solve"
                 checked={editIsFirstSolve}
                 onChange={(e) => setEditIsFirstSolve(e.target.checked)}
               />

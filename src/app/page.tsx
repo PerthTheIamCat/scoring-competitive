@@ -10,17 +10,13 @@ type QuestionProps = {
   status?: "correct" | "pending" | "incorrect" | "none";
 };
 
-const NUM_QUESTIONS = 8;
+const NUM_QUESTIONS = 8; // Change this value to adjust number of questions
+
+// Instead of having questions1, questions2, …, questions8,
+// we now use an array of QuestionProps.
 type ScoreProps = {
   team_name: string;
-  questions1: QuestionProps;
-  questions2: QuestionProps;
-  questions3: QuestionProps;
-  questions4: QuestionProps;
-  questions5: QuestionProps;
-  questions6: QuestionProps;
-  questions7: QuestionProps;
-  questions8: QuestionProps;
+  questions: QuestionProps[];
   sum: number;
   previousRank?: number;
   isMoving?: boolean;
@@ -32,7 +28,7 @@ export default function Home() {
   const [pendingScores, setPendingScores] = useState<ScoreProps[] | null>(null);
   const teamsToCheckRef = useRef<ScoreProps[]>([]);
   const socketRef = useRef<Socket | null>(null);
-  // เก็บ snapshot ของคะแนนก่อน freeze
+  // Snapshot of scores before freeze
   const frozenScoresRef = useRef<ScoreProps[]>([]);
 
   const [isFrozen, setIsFrozen] = useState(false);
@@ -81,25 +77,24 @@ export default function Home() {
 
   function handleScoreUpdate(updatedTeams: ScoreProps[]) {
     setScores((prevScores) => {
-      // ใช้ frozenScoresRef ถ้ามีข้อมูล snapshot จากก่อน freeze
+      // Use frozen snapshot if available
       const oldScores =
         frozenScoresRef.current.length > 0
           ? frozenScoresRef.current
           : prevScores;
-      const oldRanks = oldScores.reduce(
-        (acc, team, index) => ({ ...acc, [team.team_name]: index + 1 }),
-        {} as Record<string, number>
-      );
+      const oldRanks = oldScores.reduce((acc, team, index) => {
+        acc[team.team_name] = index + 1;
+        return acc;
+      }, {} as Record<string, number>);
 
       const sortedScores = [...updatedTeams].sort((a, b) => b.sum - a.sum);
       sortedScores.forEach((team, index) => {
         const oldRank = oldRanks[team.team_name] || index + 1;
-        const newRank = index + 1;
         team.previousRank = oldRank;
-        team.isMoving = oldRank !== newRank;
+        team.isMoving = oldRank !== index + 1;
       });
 
-      // เมื่ออัพเดทแบบปกติแล้วเคลียร์ frozen snapshot
+      // Clear snapshot if not frozen
       if (!isFrozen && frozenScoresRef.current.length > 0) {
         frozenScoresRef.current = [];
       }
@@ -112,7 +107,7 @@ export default function Home() {
     });
   }
 
-  // เมื่อกด Freeze ให้เก็บ snapshot ของ scores ก่อน freeze
+  // Freeze: store snapshot before freezing
   function handleFreeze() {
     frozenScoresRef.current = scores;
     setIsFrozen(true);
@@ -130,7 +125,7 @@ export default function Home() {
       currentCheckingIndex === null ||
       currentCheckingIndex >= teamsToCheckRef.current.length
     ) {
-      // เมื่อเช็คครบทุกทีมแล้ว ให้รีเซ็ต flag และ snapshot
+      // All teams checked: reset flags and snapshots
       setScores((prevScores) => {
         const sortedScores = [...prevScores].sort((a, b) => b.sum - a.sum);
         sortedScores.forEach((team, idx) => {
@@ -141,8 +136,8 @@ export default function Home() {
         return sortedScores;
       });
       console.log("Finalizing unfreezing: resetting flags and snapshots");
-      frozenScoresRef.current = []; // เคลียร์ snapshot ของคะแนนก่อน freeze
-      teamsToCheckRef.current = []; // เคลียร์ snapshot ของลำดับทีมที่ต้องเช็ค
+      frozenScoresRef.current = [];
+      teamsToCheckRef.current = [];
       setIsUnfreezing(false);
       setCurrentCheckingIndex(null);
       return;
@@ -150,12 +145,10 @@ export default function Home() {
 
     const team = teamsToCheckRef.current[currentCheckingIndex];
 
-    const teamFirstSolveQuestions = Object.entries(team)
-      .filter(
-        ([key, value]) =>
-          key.startsWith("questions") && (value as QuestionProps).isFirstSolve
-      )
-      .map(([key]) => key.replace("questions", "Q"));
+    // Check for first-solve in this team's questions
+    const teamFirstSolveQuestions = team.questions
+      .map((q, i) => (q.isFirstSolve ? `Q${i + 1}` : ""))
+      .filter(Boolean);
 
     let pendingFirstSolveQuestions: string[] = [];
     if (pendingScores) {
@@ -163,17 +156,13 @@ export default function Home() {
         (t) => t.team_name === team.team_name
       );
       if (pendingTeam) {
-        pendingFirstSolveQuestions = Object.entries(pendingTeam)
-          .filter(
-            ([key, value]) =>
-              key.startsWith("questions") &&
-              (value as QuestionProps).isFirstSolve
-          )
-          .map(([key]) => key.replace("questions", "Q"));
+        pendingFirstSolveQuestions = pendingTeam.questions
+          .map((q, i) => (q.isFirstSolve ? `Q${i + 1}` : ""))
+          .filter(Boolean);
       }
     }
 
-    // Merge and remove duplicates from both sources
+    // Merge and remove duplicates
     const firstSolveQuestions = Array.from(
       new Set([...teamFirstSolveQuestions, ...pendingFirstSolveQuestions])
     );
@@ -181,9 +170,9 @@ export default function Home() {
     if (firstSolveQuestions.length > 0) {
       setModalState({
         isOpen: true,
-        message: `ทีม "${
+        message: `Team "${
           team.team_name
-        }" ทำ First Solve ได้ในข้อ: ${firstSolveQuestions.join(", ")}`,
+        }" got first-solve on: ${firstSolveQuestions.join(", ")}`,
       });
       return;
     }
@@ -198,13 +187,11 @@ export default function Home() {
       );
       if (updatedTeam) {
         setScores((prevScores) => {
-          // merge ข้อมูลใหม่เฉพาะทีมที่กำลังเช็ค
           const newScores = prevScores.map((t) =>
             t.team_name === team.team_name
               ? { ...t, ...updatedTeam, isHighlighting: true }
               : t
           );
-          // คำนวณอันดับเก่า (สามารถใช้ frozenScoresRef หรือ prevScores เป็น snapshot ได้)
           const oldOrder =
             frozenScoresRef.current.length > 0
               ? frozenScoresRef.current
@@ -213,9 +200,7 @@ export default function Home() {
             acc[t.team_name] = idx + 1;
             return acc;
           }, {} as Record<string, number>);
-          // re-sort ใหม่ตาม sum
           const sortedScores = [...newScores].sort((a, b) => b.sum - a.sum);
-          // คำนวณอันดับใหม่และ flag isMoving
           sortedScores.forEach((t, idx) => {
             const oldRank = oldRanks[t.team_name] || idx + 1;
             t.previousRank = oldRank;
@@ -226,14 +211,14 @@ export default function Home() {
       }
     }
 
-    // แสดง highlight ของทีมที่กำลังตรวจสอบ
+    // Highlight the team currently being checked
     setScores((prevScores) =>
       prevScores.map((t) =>
         t.team_name === team.team_name ? { ...t, isHighlighting: true } : t
       )
     );
 
-    // หลังจาก delay 1 วินาทีให้ลบ highlight และเพิ่ม currentCheckingIndex
+    // After a delay, remove highlight and move to the next team
     setTimeout(() => {
       setScores((prevScores) =>
         prevScores.map((t) =>
@@ -249,9 +234,9 @@ export default function Home() {
     setIsFrozen(false);
     setIsUnfreezing(true);
     setCurrentCheckingIndex(0);
-    // ไม่รีเฟรช scores ทันที
     if (pendingScores) {
-      // เก็บ snapshot ของทีมที่ต้องอัปเดต (จาก pendingScores) ในลำดับจากล่างสุดขึ้นไป
+      teamsToCheckRef.current = [...pendingScores].reverse();
+    } else {
       teamsToCheckRef.current = [...scores].reverse();
     }
   }
@@ -288,7 +273,9 @@ export default function Home() {
         )}
       </div>
 
-      <div className="grid grid-cols-[auto,2fr,repeat(8,1fr),1fr] w-full min-w-[1024px] text-white text-lg bg-gray-700 p-4 rounded-lg font-bold">
+      <div
+        className={`grid grid-cols-[auto,2fr,repeat(${NUM_QUESTIONS},1fr),1fr] w-full min-w-[1024px] text-white text-lg bg-gray-700 p-4 rounded-lg font-bold`}
+      >
         <p className="text-center pr-5">#</p>
         <p>Team Name</p>
         {Array.from({ length: NUM_QUESTIONS }, (_, i) => (
@@ -302,14 +289,12 @@ export default function Home() {
       <div className="w-full min-w-[1024px] flex flex-col gap-2">
         <AnimatePresence>
           {scores.map((item, index) => {
-            // คำนวณอันดับเดิมจาก frozenScoresRef ถ้ามี
             const previousRank =
               frozenScoresRef.current.length > 0
                 ? frozenScoresRef.current.findIndex(
                     (t) => t.team_name === item.team_name
                   ) + 1
                 : item.previousRank;
-
             const bgColor = isUnfreezing
               ? item.isHighlighting
                 ? "bg-blue-500"
@@ -332,14 +317,11 @@ export default function Home() {
                   damping: 25,
                   duration: 3,
                 }}
-                className={`grid grid-cols-[auto,2fr,repeat(8,1fr),1fr] w-full h-16 text-white text-lg rounded-lg items-center p-4 shadow-md transition-colors duration-500 ${bgColor}`}
+                className={`grid grid-cols-[auto,2fr,repeat(${NUM_QUESTIONS},1fr),1fr] w-full h-16 text-white text-lg rounded-lg items-center p-4 shadow-md transition-colors duration-500 ${bgColor}`}
               >
                 <p className="text-center font-bold pr-5">{index + 1}</p>
                 <p>{item.team_name}</p>
-                {Array.from({ length: NUM_QUESTIONS }, (_, i) => {
-                  const key = `questions${i + 1}` as keyof ScoreProps;
-                  const question = item[key] as QuestionProps;
-
+                {item.questions.map((question, i) => {
                   if (question.isFirstSolve) {
                     return (
                       <div
@@ -350,7 +332,6 @@ export default function Home() {
                       </div>
                     );
                   }
-
                   const statusColor =
                     question.status === "correct"
                       ? "bg-green-500"
@@ -359,7 +340,6 @@ export default function Home() {
                       : question.status === "incorrect"
                       ? "bg-red-500"
                       : "bg-transparent";
-
                   return (
                     <div
                       key={i}
