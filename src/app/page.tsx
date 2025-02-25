@@ -10,6 +10,7 @@ type QuestionProps = {
   status?: "correct" | "pending" | "incorrect" | "none";
 };
 
+const NUM_QUESTIONS = 8;
 type ScoreProps = {
   team_name: string;
   questions1: QuestionProps;
@@ -26,8 +27,6 @@ type ScoreProps = {
   isHighlighting?: boolean;
 };
 
-const NUM_QUESTIONS = 8;
-
 export default function Home() {
   const [scores, setScores] = useState<ScoreProps[]>([]);
   const [pendingScores, setPendingScores] = useState<ScoreProps[] | null>(null);
@@ -41,7 +40,6 @@ export default function Home() {
   const [currentCheckingIndex, setCurrentCheckingIndex] = useState<
     number | null
   >(null);
-  const teamsToCheck = [...scores].reverse();
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
     message: string;
@@ -254,7 +252,7 @@ export default function Home() {
     // ไม่รีเฟรช scores ทันที
     if (pendingScores) {
       // เก็บ snapshot ของทีมที่ต้องอัปเดต (จาก pendingScores) ในลำดับจากล่างสุดขึ้นไป
-      teamsToCheckRef.current = [...pendingScores].reverse();
+      teamsToCheckRef.current = [...scores].reverse();
     }
   }
 
