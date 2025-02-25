@@ -10,10 +10,9 @@ type QuestionProps = {
   status?: "correct" | "pending" | "incorrect" | "none";
 };
 
-const NUM_QUESTIONS = 8; // Change this value to adjust number of questions
+const NUM_QUESTIONS = 8; // Change this value to adjust the number of questions
 
-// Instead of having questions1, questions2, …, questions8,
-// we now use an array of QuestionProps.
+// Team now holds a questions array instead of separate keys.
 type ScoreProps = {
   team_name: string;
   questions: QuestionProps[];
@@ -36,6 +35,7 @@ export default function Home() {
   const [currentCheckingIndex, setCurrentCheckingIndex] = useState<
     number | null
   >(null);
+  const currentCheckingIndexRef = useRef<number | null>(null);
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
     message: string;
@@ -54,22 +54,45 @@ export default function Home() {
       console.log("Connected to socket server with id:", socketRef.current?.id);
     });
 
-    socketRef.current.on("score-updated", (updatedData) => {
+    socketRef.current.on("score-updated", (updatedData, ack) => {
       console.log("Received score update:", updatedData);
       if (!isFrozen) {
         handleScoreUpdate(updatedData.teams);
       } else {
         setPendingScores(updatedData.teams);
       }
+      if (ack) ack({ received: true });
     });
 
-    socketRef.current.on("disconnect", (reason) => {
-      console.log("Socket disconnected:", reason);
+    // Listen for admin events emitted from the Admin page
+    socketRef.current.on("admin-freeze", (data, ack) => {
+      console.log(
+        "Admin freeze event received on client",
+        socketRef.current?.id
+      );
+      handleFreeze(); // Call your local freeze function
+      if (ack) ack({ received: true });
+    });
+    socketRef.current.on("admin-unfreeze", (data, ack) => {
+      console.log(
+        "Admin unfreeze event received on client",
+        socketRef.current?.id
+      );
+      handleUnfreeze(); // Call your local unfreeze function
+      if (ack) ack({ received: true });
+    });
+    socketRef.current.on("admin-next", (data, ack) => {
+      console.log("Admin next event received on client", socketRef.current?.id);
+      handleNextCheck(); // Call your local next function
+      if (ack) ack({ received: true });
     });
 
     return () => {
       if (socketRef.current) {
         socketRef.current.off("score-updated");
+        socketRef.current.off("admin-freeze");
+        socketRef.current.off("admin-unfreeze");
+        socketRef.current.off("admin-next");
         socketRef.current.disconnect();
       }
     };
@@ -107,25 +130,27 @@ export default function Home() {
     });
   }
 
-  // Freeze: store snapshot before freezing
+  // Freeze: store snapshot of current scores
   function handleFreeze() {
     frozenScoresRef.current = scores;
     setIsFrozen(true);
   }
 
   function handleNextCheck() {
+    // Use the ref value instead of the state variable directly
+    const currentIndex = currentCheckingIndexRef.current;
     console.log(
       "handleNextCheck: currentCheckingIndex =",
-      currentCheckingIndex,
+      currentIndex,
       "teamsToCheck length =",
       teamsToCheckRef.current.length
     );
 
     if (
-      currentCheckingIndex === null ||
-      currentCheckingIndex >= teamsToCheckRef.current.length
+      currentIndex === null ||
+      currentIndex >= teamsToCheckRef.current.length
     ) {
-      // All teams checked: reset flags and snapshots
+      // All teams have been checked: reset flags and snapshots
       setScores((prevScores) => {
         const sortedScores = [...prevScores].sort((a, b) => b.sum - a.sum);
         sortedScores.forEach((team, idx) => {
@@ -140,10 +165,11 @@ export default function Home() {
       teamsToCheckRef.current = [];
       setIsUnfreezing(false);
       setCurrentCheckingIndex(null);
+      currentCheckingIndexRef.current = null;
       return;
     }
 
-    const team = teamsToCheckRef.current[currentCheckingIndex];
+    const team = teamsToCheckRef.current[currentIndex];
 
     // Check for first-solve in this team's questions
     const teamFirstSolveQuestions = team.questions
@@ -218,14 +244,19 @@ export default function Home() {
       )
     );
 
-    // After a delay, remove highlight and move to the next team
+    // After a delay, remove the highlight and increment the checking index
     setTimeout(() => {
       setScores((prevScores) =>
         prevScores.map((t) =>
           t.team_name === team.team_name ? { ...t, isHighlighting: false } : t
         )
       );
-      setCurrentCheckingIndex((prev) => (prev !== null ? prev + 1 : null));
+      // Use functional update and update the ref as well
+      setCurrentCheckingIndex((prev) => {
+        const newIndex = prev !== null ? prev + 1 : null;
+        currentCheckingIndexRef.current = newIndex;
+        return newIndex;
+      });
     }, 1000);
   }
 
@@ -234,11 +265,14 @@ export default function Home() {
     setIsFrozen(false);
     setIsUnfreezing(true);
     setCurrentCheckingIndex(0);
+    currentCheckingIndexRef.current = 0;
     if (pendingScores) {
-      teamsToCheckRef.current = [...pendingScores].reverse();
-    } else {
       teamsToCheckRef.current = [...scores].reverse();
     }
+  }
+  function handleOK() {
+    setModalState({ isOpen: false, message: "" });
+    processNextTeam(teamsToCheckRef.current[currentCheckingIndex!]);
   }
 
   return (
@@ -249,6 +283,7 @@ export default function Home() {
     >
       <h1 className="text-4xl font-bold mb-5">🏆 Scoreboard Ranking 🏆</h1>
 
+      {/* Optionally, you can keep local controls here as well */}
       <div className="flex gap-4 mb-5">
         <button
           className="px-4 py-2 bg-red-500 text-white rounded"
@@ -306,7 +341,6 @@ export default function Home() {
                   : "bg-red-500"
                 : "bg-gray-500"
               : "bg-gray-500";
-
             return (
               <motion.div
                 key={item.team_name}
@@ -360,12 +394,7 @@ export default function Home() {
                 <p className="mb-4 text-4xl">{modalState.message}</p>
                 <button
                   className="px-4 py-2 bg-blue-500 text-white rounded"
-                  onClick={() => {
-                    setModalState({ isOpen: false, message: "" });
-                    processNextTeam(
-                      teamsToCheckRef.current[currentCheckingIndex!]
-                    );
-                  }}
+                  onClick={handleOK}
                 >
                   OK ✅
                 </button>

@@ -13,14 +13,16 @@ type Question = {
 
 type Team = {
   team_name: string;
-  questions: Question[]; // now an array of questions
+  questions: Question[]; // using an array for questions
   sum: number;
   previousRank: number;
   isMoving: boolean;
-  // (Optional: you can add other properties if needed)
 };
 
 export default function Admin() {
+  const [count, setCount] = useState(0);
+  const [isFrozen, setIsFrozen] = useState(false);
+  const [isUnfreezing, setIsUnfreezing] = useState(false);
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamName, setTeamName] = useState<string>("");
   const [numProblems, setNumProblems] = useState<number>(0);
@@ -35,19 +37,69 @@ export default function Admin() {
   const [editStatus, setEditStatus] = useState<string>("none");
   const [editIsFirstSolve, setEditIsFirstSolve] = useState<boolean>(false);
 
+  function handleUnfreeze() {
+    if (!isFrozen) return;
+    setIsFrozen(false);
+    setIsUnfreezing(true);
+  }
+
+  function handleNext() {
+    if (count < teams.length) {
+      setCount(count + 1);
+    } else {
+      setCount(0);
+      setIsUnfreezing(false);
+    }
+  }
+
+  function handleFreeze() {
+    setIsFrozen(true);
+    setIsUnfreezing(false);
+  }
+
+  // Initialize the socket (if not already)
   const initializeSocket = () => {
     if (!socket) {
       socket = io({ path: "/api/socket" });
+      console.log("Socket initialized:", socket);
     }
   };
 
+  // New admin controls: emit WS events
+  const handleAdminFreeze = () => {
+    initializeSocket();
+    console.log("Emitting admin-freeze event");
+    socket.emit("admin-freeze", {}, (ackResponse: any) => {
+      console.log("Admin freeze ack received:", ackResponse);
+    });
+    handleFreeze();
+  };
+
+  const handleAdminUnfreeze = () => {
+    initializeSocket();
+    console.log("Emitting admin-unfreeze event");
+    socket.emit("admin-unfreeze", {}, (ackResponse: any) => {
+      console.log("Admin unfreeze ack received:", ackResponse);
+    });
+    handleUnfreeze();
+  };
+
+  const handleAdminNext = () => {
+    initializeSocket();
+    console.log("Emitting admin-next event");
+    socket.emit("admin-next", {}, (ackResponse: any) => {
+      console.log("Admin next ack received:", ackResponse);
+    });
+    handleNext();
+  };
+
+  // Existing addTeam function
   const addTeam = () => {
     if (!teamName || numProblems <= 0) {
       alert("Please enter a valid team name and number of problems.");
       return;
     }
 
-    // Create an array of questions with length equal to numProblems
     const questions = Array(numProblems)
       .fill(null)
       .map(() => ({
@@ -67,10 +119,13 @@ export default function Admin() {
     const updatedTeams = [...teams, newTeam];
     setTeams(updatedTeams);
     setTeamName("");
+    // Optionally reset numProblems here if desired:
     // setNumProblems(0);
 
     initializeSocket();
-    socket.emit("update-score", { teams: updatedTeams });
+    socket.emit("update-score", { teams: updatedTeams }, (ackResponse: any) => {
+      console.log("Add team ack received:", ackResponse);
+    });
   };
 
   const openEditModal = (
@@ -91,7 +146,6 @@ export default function Admin() {
 
     const updatedTeams = [...teams];
     const team = updatedTeams[selectedTeamIndex];
-    // Update the specific question
     team.questions[selectedQuestionIndex] = {
       ...team.questions[selectedQuestionIndex],
       score: editScore,
@@ -99,7 +153,6 @@ export default function Admin() {
       isFirstSolve: editIsFirstSolve,
     };
 
-    // Recalculate the team sum
     team.sum = team.questions.reduce((acc, q) => acc + q.score, 0);
 
     setTeams(updatedTeams);
@@ -143,6 +196,35 @@ export default function Admin() {
             </button>
           </div>
         </div>
+
+        {/* New admin control buttons */}
+        <div className="row-span-1 flex justify-center items-center gap-4 my-4">
+          {!isFrozen && !isUnfreezing && (
+            <button
+              className="px-4 py-2 bg-red-500 text-white rounded"
+              onClick={handleAdminFreeze}
+            >
+              Freeze Score 🛑
+            </button>
+          )}
+          {isFrozen && (
+            <button
+              className="px-4 py-2 bg-blue-500 text-white rounded"
+              onClick={handleAdminUnfreeze}
+            >
+              Unfreeze Score ▶️
+            </button>
+          )}
+          {isUnfreezing && (
+            <button
+              className="px-4 py-2 bg-green-500 text-white rounded"
+              onClick={handleAdminNext}
+            >
+              Next ✅
+            </button>
+          )}
+        </div>
+
         <div className="row-span-9 overflow-y-auto p-4">
           {teams.map((team, teamIndex) => (
             <div
