@@ -309,7 +309,7 @@ export default function Home() {
       </div>
 
       <div
-        className={`grid grid-cols-[auto,2fr,repeat(${NUM_QUESTIONS},1fr),1fr] w-full min-w-[1024px] text-white text-lg bg-gray-700 p-4 rounded-lg font-bold`}
+        className={`grid grid-cols-[auto,2fr,repeat(8,1fr),1fr] w-full min-w-[1024px] text-white text-lg bg-gray-700 p-4 rounded-lg font-bold`}
       >
         <p className="text-center pr-5">#</p>
         <p>Team Name</p>
