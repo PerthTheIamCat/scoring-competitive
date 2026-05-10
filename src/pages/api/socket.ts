@@ -16,7 +16,7 @@ const ioHandler = (req: NextApiRequest, res: any) => {
       // Listener for update-score (ที่มีอยู่แล้ว)
       socket.on("update-score", (data) => {
         // process update-score normally...
-        io.emit("score-updated", data);
+        io.emit("update-score", data);
       });
 
       // Listener for admin events

@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 
 let socket: Socket;
 
 type Question = {
   score: number;
+  time: string;
   isFirstSolve: boolean;
   status: string;
 };
@@ -60,10 +61,41 @@ export default function Admin() {
   // Initialize the socket (if not already)
   const initializeSocket = () => {
     if (!socket) {
-      socket = io({ path: "/api/socket" });
+      socket = io({
+        path: "/api/socket",
+        transports: ["websocket"],
+      });
       console.log("Socket initialized:", socket);
     }
   };
+  const secondarySocket = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    secondarySocket.current = io("http://192.168.150.190:4000", {
+      path: "/socket.io",
+      transports: ["websocket"],
+    });
+
+    secondarySocket.current.on("connect", () => {
+      console.log(
+        "Connected to secondary socket with id:",
+        secondarySocket.current?.id
+      );
+    });
+
+    secondarySocket.current.on("update-score", (updatedData, ack) => {
+      console.log("Secondary socket event received:", updatedData);
+      setTeams(updatedData);
+      if (ack) ack({ received: true });
+    });
+
+    return () => {
+      if (secondarySocket.current) {
+        secondarySocket.current.off("update-score");
+        secondarySocket.current.disconnect();
+      }
+    };
+  }, []);
 
   // New admin controls: emit WS events
   const handleAdminFreeze = () => {
@@ -160,6 +192,7 @@ export default function Admin() {
 
     initializeSocket();
     socket.emit("update-score", { teams: updatedTeams });
+    console.log("Emitting update-score event");
   };
 
   return (
@@ -287,7 +320,7 @@ export default function Admin() {
                     if (/^\d*$/.test(val)) {
                       const num = Number(val);
                       setEditScore(num);
-                      if (num === 100) {
+                      if (num >= 100) {
                         setEditStatus("correct");
                       } else if (num === 0) {
                         setEditStatus("incorrect");
